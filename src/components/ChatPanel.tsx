@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { OrbState } from "./Orb";
+import { speak, stopSpeaking } from "@/lib/voice";
 
 export type Msg = {
   id: string;
@@ -111,13 +112,37 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     onStateChange("thinking");
     setTimeout(() => {
       const { reply, kind, orb } = processCommand(text);
-      const finalOrb = muted ? "muted" : orb;
       const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
       setMessages((m) => [...m, reMsg]);
-      onStateChange(finalOrb);
-      setTimeout(() => onStateChange(muted ? "muted" : "idle"), 2200);
+
+      if (muted) {
+        onStateChange("muted");
+        setTimeout(() => onStateChange("muted"), 1200);
+        return;
+      }
+
+      // Hata durumunda kırmızı orb, sonra mavi konuşma
+      if (kind === "error") {
+        onStateChange("error");
+        setTimeout(() => {
+          speak(reply, {
+            onStart: () => onStateChange("speaking"),
+            onEnd: () => onStateChange("idle"),
+          });
+        }, 600);
+      } else {
+        speak(reply, {
+          onStart: () => onStateChange(orb),
+          onEnd: () => onStateChange("idle"),
+        });
+      }
     }, 700 + Math.random() * 600);
   };
+
+  // Mute / shutdown değişince konuşmayı kes
+  useEffect(() => {
+    if (muted || shutdown) stopSpeaking();
+  }, [muted, shutdown]);
 
   return (
     <div className="glass rounded-xl flex flex-col h-full overflow-hidden">
