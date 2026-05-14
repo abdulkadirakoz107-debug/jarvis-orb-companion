@@ -143,14 +143,15 @@ export function HudFrame({ children }: { children: React.ReactNode }) {
 }
 
 export function Clock() {
-  const [now, setNow] = useState(new Date());
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const t = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
   return (
     <div className="display text-jarvis-blue text-glow text-2xl tabular-nums">
-      {now.toLocaleTimeString("tr-TR")}
+      {now ? now.toLocaleTimeString("tr-TR") : "--:--:--"}
     </div>
   );
 }
