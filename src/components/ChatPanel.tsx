@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { OrbState } from "./Orb";
 import { speak, stopSpeaking } from "@/lib/voice";
+import { isSpeechRecognitionSupported, startListening, type Listener } from "@/lib/speech";
+import { getWeather } from "@/lib/weather";
 
 export type Msg = {
   id: string;
@@ -16,26 +18,23 @@ type Props = {
   shutdown: boolean;
 };
 
-// Local Jarvis "brain" — simulates command handling.
-function processCommand(input: string): { reply: string; kind?: "error" | "action"; orb: OrbState } {
+type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState };
+
+async function processCommand(input: string): Promise<CmdResult> {
   const cmd = input.trim().toLowerCase();
   if (!cmd) return { reply: "Lütfen bir komut girin efendim.", kind: "error", orb: "error" };
 
-  // Open app
   const openMatch = cmd.match(/^(?:aç|open|başlat)\s+(.+)/);
   if (openMatch) {
-    const app = openMatch[1];
-    return { reply: `🚀 ${app} uygulaması başlatılıyor... (simülasyon)`, kind: "action", orb: "speaking" };
+    return { reply: `🚀 ${openMatch[1]} uygulaması başlatılıyor... (simülasyon)`, kind: "action", orb: "speaking" };
   }
 
-  // Music
   if (/(müzik|music|şarkı|çal)/.test(cmd)) {
     const tracks = ["Daft Punk - Aerodynamic", "Hans Zimmer - Time", "TOOL - Pneuma", "Interstellar OST"];
     const t = tracks[Math.floor(Math.random() * tracks.length)];
     return { reply: `🎵 Şu an çalınıyor: "${t}"`, kind: "action", orb: "speaking" };
   }
 
-  // Message
   const msgMatch = cmd.match(/(?:mesaj gönder|send message|sms)\s+(\S+)\s+(.+)/);
   if (msgMatch) {
     return { reply: `✉️ ${msgMatch[1]} kişisine mesaj gönderildi: "${msgMatch[2]}"`, kind: "action", orb: "speaking" };
@@ -44,16 +43,22 @@ function processCommand(input: string): { reply: string; kind?: "error" | "actio
     return { reply: "Kime ve ne yazılacak? Örn: mesaj gönder Ayşe Merhaba", kind: "action", orb: "speaking" };
   }
 
-  // Weather
+  // Gerçek hava durumu (Open-Meteo)
   if (/(hava|weather)/.test(cmd)) {
-    const cities = ["İstanbul", "Ankara", "İzmir"];
-    const city = cities.find((c) => cmd.includes(c.toLowerCase())) ?? "İstanbul";
-    const temp = (Math.random() * 25 + 5).toFixed(1);
-    const cond = ["güneşli ☀️", "parçalı bulutlu ⛅", "yağmurlu 🌧️", "rüzgârlı 🌬️"][Math.floor(Math.random() * 4)];
-    return { reply: `🌍 ${city}: ${temp}°C, ${cond}`, kind: "action", orb: "speaking" };
+    const m = cmd.match(/(?:hava(?:sı)?|weather)\s+([a-zçğıöşü\s]+)/i);
+    let city = m?.[1]?.trim();
+    if (!city) {
+      const known = ["istanbul", "ankara", "izmir", "bursa", "antalya", "adana", "konya", "trabzon"];
+      city = known.find((c) => cmd.includes(c)) ?? "istanbul";
+    }
+    try {
+      const reply = await getWeather(city);
+      return { reply, kind: "action", orb: "speaking" };
+    } catch (e) {
+      return { reply: `Hava durumu alınamadı: ${(e as Error).message}`, kind: "error", orb: "error" };
+    }
   }
 
-  // System info
   if (/(sistem|system|cpu|ram|bellek)/.test(cmd)) {
     const cpu = (Math.random() * 60 + 10).toFixed(0);
     const ram = (Math.random() * 50 + 30).toFixed(0);
@@ -65,7 +70,6 @@ function processCommand(input: string): { reply: string; kind?: "error" | "actio
     };
   }
 
-  // Terminal-style commands
   if (cmd === "help" || cmd === "yardım") {
     return {
       reply:
@@ -79,7 +83,6 @@ function processCommand(input: string): { reply: string; kind?: "error" | "actio
   if (cmd === "ls") return { reply: "Documents  Lab  Suits  Workshop", orb: "speaking" };
   if (cmd.startsWith("echo ")) return { reply: cmd.slice(5), orb: "speaking" };
 
-  // Greeting
   if (/(merhaba|selam|hello|hi|hey|jarvis)/.test(cmd)) {
     return { reply: "Merhaba efendim. Size nasıl yardımcı olabilirim?", orb: "speaking" };
   }
@@ -96,52 +99,100 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     { id: "1", role: "system", text: "J.A.R.V.I.S sistemi başlatıldı. Komutlarınız bekleniyor.", ts: Date.now() },
   ]);
   const [input, setInput] = useState("");
+  const [listening, setListening] = useState(false);
+  const [partial, setPartial] = useState("");
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const listenerRef = useRef<Listener | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
+    setVoiceSupported(isSpeechRecognitionSupported());
+  }, []);
 
-  const send = () => {
-    if (!input.trim() || shutdown) return;
-    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text: input, ts: Date.now() };
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, partial]);
+
+  const submit = async (text: string) => {
+    if (!text.trim() || shutdown) return;
+    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text, ts: Date.now() };
     setMessages((m) => [...m, userMsg]);
-    const text = input;
-    setInput("");
 
     onStateChange("thinking");
-    setTimeout(() => {
-      const { reply, kind, orb } = processCommand(text);
-      const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
-      setMessages((m) => [...m, reMsg]);
+    const { reply, kind, orb } = await processCommand(text);
+    const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
+    setMessages((m) => [...m, reMsg]);
 
-      if (muted) {
-        onStateChange("muted");
-        setTimeout(() => onStateChange("muted"), 1200);
-        return;
-      }
+    if (muted) {
+      onStateChange("muted");
+      return;
+    }
 
-      // Hata durumunda kırmızı orb, sonra mavi konuşma
-      if (kind === "error") {
-        onStateChange("error");
-        setTimeout(() => {
-          speak(reply, {
-            onStart: () => onStateChange("speaking"),
-            onEnd: () => onStateChange("idle"),
-          });
-        }, 600);
-      } else {
+    if (kind === "error") {
+      onStateChange("error");
+      setTimeout(() => {
         speak(reply, {
-          onStart: () => onStateChange(orb),
+          onStart: () => onStateChange("speaking"),
           onEnd: () => onStateChange("idle"),
         });
-      }
-    }, 700 + Math.random() * 600);
+      }, 600);
+    } else {
+      speak(reply, {
+        onStart: () => onStateChange(orb),
+        onEnd: () => onStateChange("idle"),
+      });
+    }
   };
 
-  // Mute / shutdown değişince konuşmayı kes
+  const send = () => {
+    const text = input;
+    setInput("");
+    void submit(text);
+  };
+
+  const toggleMic = () => {
+    if (shutdown) return;
+    if (listening) {
+      listenerRef.current?.stop();
+      return;
+    }
+    stopSpeaking();
+    setPartial("");
+    onStateChange("thinking");
+    const l = startListening({
+      onPartial: (t) => setPartial(t),
+      onResult: (t) => {
+        setPartial("");
+        void submit(t);
+      },
+      onError: (err) => {
+        setPartial("");
+        setListening(false);
+        onStateChange("error");
+        setMessages((m) => [
+          ...m,
+          { id: crypto.randomUUID(), role: "system", text: `🎙️ Mikrofon hatası: ${err}`, ts: Date.now() },
+        ]);
+        setTimeout(() => onStateChange("idle"), 1500);
+      },
+      onEnd: () => {
+        setListening(false);
+        setPartial("");
+      },
+    });
+    if (l) {
+      listenerRef.current = l;
+      setListening(true);
+    } else {
+      onStateChange("idle");
+    }
+  };
+
   useEffect(() => {
-    if (muted || shutdown) stopSpeaking();
+    if (muted || shutdown) {
+      stopSpeaking();
+      listenerRef.current?.stop();
+    }
   }, [muted, shutdown]);
 
   return (
@@ -156,12 +207,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-thin">
         {messages.map((m) => (
-          <div
-            key={m.id}
-            className={`text-sm leading-relaxed ${
-              m.role === "user" ? "text-right" : "text-left"
-            }`}
-          >
+          <div key={m.id} className={`text-sm leading-relaxed ${m.role === "user" ? "text-right" : "text-left"}`}>
             <div
               className={`inline-block max-w-[85%] px-3 py-2 rounded-lg whitespace-pre-wrap ${
                 m.role === "user"
@@ -174,25 +220,44 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
               }`}
             >
               {m.role === "jarvis" && (
-                <div className="text-[10px] tracking-widest text-jarvis-blue mb-1 display">
-                  JARVIS
-                </div>
+                <div className="text-[10px] tracking-widest text-jarvis-blue mb-1 display">JARVIS</div>
               )}
               {m.text}
             </div>
           </div>
         ))}
+        {partial && (
+          <div className="text-right text-sm">
+            <div className="inline-block max-w-[85%] px-3 py-2 rounded-lg bg-jarvis-yellow/10 border border-jarvis-yellow/40 text-jarvis-yellow italic">
+              🎙️ {partial}…
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="border-t border-border p-3">
         <div className="flex items-center gap-2">
+          <button
+            onClick={toggleMic}
+            disabled={shutdown || !voiceSupported}
+            title={voiceSupported ? "Sesli komut" : "Tarayıcınız desteklemiyor"}
+            className="display text-xs px-2 py-1 rounded border transition disabled:opacity-30"
+            style={{
+              color: listening ? "var(--jarvis-red)" : "var(--jarvis-blue)",
+              borderColor: listening ? "var(--jarvis-red)" : "var(--jarvis-blue)",
+              boxShadow: listening ? "0 0 14px var(--jarvis-red)" : "none",
+              background: listening ? "color-mix(in oklab, var(--jarvis-red) 18%, transparent)" : "transparent",
+            }}
+          >
+            {listening ? "● REC" : "🎙 MIC"}
+          </button>
           <span className="text-jarvis-blue display text-sm">{">"}</span>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
             disabled={shutdown}
-            placeholder={shutdown ? "Sistem kapalı..." : "Komutu girin..."}
+            placeholder={shutdown ? "Sistem kapalı..." : listening ? "Dinleniyor..." : "Komutu girin veya mikrofona basın..."}
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/60 disabled:opacity-40"
           />
           <button
