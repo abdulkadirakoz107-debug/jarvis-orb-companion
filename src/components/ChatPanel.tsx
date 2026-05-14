@@ -56,7 +56,7 @@ function processCommand(input: string): { reply: string; kind?: "error" | "actio
   if (/(sistem|system|cpu|ram|bellek)/.test(cmd)) {
     const cpu = (Math.random() * 60 + 10).toFixed(0);
     const ram = (Math.random() * 50 + 30).toFixed(0);
-    const mem = navigator.deviceMemory ?? "?";
+    const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? "?";
     return {
       reply: `🖥️ Sistem Durumu\n• CPU: %${cpu}\n• RAM: %${ram} (${mem} GB)\n• Tarayıcı: ${navigator.userAgent.split(" ").slice(-2).join(" ")}\n• Çekirdek: ${navigator.hardwareConcurrency}`,
       kind: "action",
