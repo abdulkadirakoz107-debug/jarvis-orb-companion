@@ -1,6 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 
-type ChatMsg = { role: "user" | "assistant" | "system"; content: string };
+type ChatMsg = {
+  role: "user" | "assistant" | "system";
+  content: string;
+  imageUrl?: string; // data:image/...;base64,...
+};
 
 export const askJarvis = createServerFn({ method: "POST" })
   .inputValidator((input: { messages: ChatMsg[] }) => {
@@ -14,12 +18,29 @@ export const askJarvis = createServerFn({ method: "POST" })
     const systemPrompt =
       "Sen J.A.R.V.I.S'sin — Tony Stark'ın zarif, zeki ve hafif esprili Türkçe konuşan yapay zekâ asistanısın. " +
       "Kullanıcıya 'efendim' diye hitap edersin. Cevapların kısa, net ve sesli okunmaya uygun olsun (1-3 cümle). " +
+      "Görsel verildiğinde ne gördüğünü ayrıntılı ama özlü biçimde Türkçe açıklarsın. " +
       "Markdown, madde işareti ve emoji kullanma; düz metinle konuş.";
 
-    const messages = [
-      { role: "system" as const, content: systemPrompt },
-      ...data.messages.slice(-10),
-    ];
+    const recent = data.messages.slice(-10);
+    const hasImage = recent.some((m) => m.imageUrl);
+
+    const apiMessages: any[] = [{ role: "system", content: systemPrompt }];
+    for (const m of recent) {
+      if (m.imageUrl && m.role === "user") {
+        apiMessages.push({
+          role: "user",
+          content: [
+            { type: "text", text: m.content || "Bu görselde ne görüyorsun? Türkçe açıkla." },
+            { type: "image_url", image_url: { url: m.imageUrl } },
+          ],
+        });
+      } else {
+        apiMessages.push({ role: m.role, content: m.content });
+      }
+    }
+
+    // Görsel varsa multimodal model, yoksa hızlı metin modeli
+    const model = hasImage ? "google/gemini-2.5-flash" : "google/gemini-2.5-flash";
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -27,10 +48,7 @@ export const askJarvis = createServerFn({ method: "POST" })
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
-        messages,
-      }),
+      body: JSON.stringify({ model, messages: apiMessages }),
     });
 
     if (res.status === 429) throw new Error("Şu an çok yoğunum efendim, biraz sonra tekrar deneyin.");
