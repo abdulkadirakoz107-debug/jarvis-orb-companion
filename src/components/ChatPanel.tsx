@@ -116,6 +116,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const listenerRef = useRef<Listener | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const askAI = useServerFn(askJarvis);
 
   useEffect(() => {
     setVoiceSupported(isSpeechRecognitionSupported());
