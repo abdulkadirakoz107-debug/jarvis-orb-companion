@@ -39,11 +39,11 @@ async function processCommand(
   // Görsel varsa doğrudan AI'a (görsel analiz)
   if (imageUrl) {
     try {
-      const convo = history
+      const convo: { role: "assistant" | "user"; content: string; imageUrl?: string }[] = history
         .filter((m) => m.role === "user" || m.role === "jarvis")
         .slice(-6)
         .map((m) => ({
-          role: (m.role === "jarvis" ? "assistant" : "user") as "assistant" | "user",
+          role: m.role === "jarvis" ? "assistant" : "user",
           content: m.text,
         }));
       convo.push({
