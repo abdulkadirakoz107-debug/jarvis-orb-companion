@@ -12,6 +12,7 @@ export type Msg = {
   text: string;
   ts: number;
   kind?: "text" | "error" | "action";
+  imageUrl?: string; // data URL
 };
 
 type Props = {
@@ -22,15 +23,41 @@ type Props = {
 
 type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState };
 
-type AskAI = (input: { data: { messages: { role: "user" | "assistant" | "system"; content: string }[] } }) => Promise<{ reply: string }>;
+type AskAI = (input: {
+  data: { messages: { role: "user" | "assistant" | "system"; content: string; imageUrl?: string }[] };
+}) => Promise<{ reply: string }>;
 
 async function processCommand(
   input: string,
   history: Msg[],
   askAI: AskAI,
+  imageUrl?: string,
 ): Promise<CmdResult> {
   const raw = input.trim();
   const cmd = raw.toLowerCase();
+
+  // Görsel varsa doğrudan AI'a (görsel analiz)
+  if (imageUrl) {
+    try {
+      const convo = history
+        .filter((m) => m.role === "user" || m.role === "jarvis")
+        .slice(-6)
+        .map((m) => ({
+          role: (m.role === "jarvis" ? "assistant" : "user") as "assistant" | "user",
+          content: m.text,
+        }));
+      convo.push({
+        role: "user",
+        content: raw || "Bu görselde ne görüyorsun? Türkçe açıkla.",
+        imageUrl,
+      });
+      const { reply } = await askAI({ data: { messages: convo } });
+      return { reply, orb: "speaking" };
+    } catch (e) {
+      return { reply: (e as Error).message || "Görsel analiz edilemedi.", kind: "error", orb: "error" };
+    }
+  }
+
   if (!cmd) return { reply: "Lütfen bir komut girin efendim.", kind: "error", orb: "error" };
 
   const openMatch = cmd.match(/^(?:aç|open|başlat)\s+(.+)/);
@@ -49,7 +76,6 @@ async function processCommand(
     return { reply: `✉️ ${msgMatch[1]} kişisine mesaj gönderildi: "${msgMatch[2]}"`, kind: "action", orb: "speaking" };
   }
 
-  // Gerçek hava durumu (Open-Meteo)
   if (/(hava durumu|weather|hava nasıl)/.test(cmd) || /^hava\b/.test(cmd)) {
     const m = cmd.match(/(?:hava(?:sı)?|weather)\s+([a-zçğıöşü\s]+)/i);
     let city = m?.[1]?.trim();
@@ -79,7 +105,7 @@ async function processCommand(
   if (cmd === "help" || cmd === "yardım") {
     return {
       reply:
-        "Bana her şeyi sorabilirsiniz efendim. Özel komutlar:\n• aç <uygulama>\n• müzik çal\n• mesaj gönder <isim> <metin>\n• hava <şehir>\n• sistem bilgisi\n• terminal: echo, date, whoami, pwd, ls\n• mute / resume / shutdown",
+        "Bana her şeyi sorabilirsiniz efendim. Görsel de yollayabilirsiniz. Özel komutlar:\n• aç <uygulama>\n• müzik çal\n• mesaj gönder <isim> <metin>\n• hava <şehir>\n• sistem bilgisi\n• terminal: echo, date, whoami, pwd, ls",
       orb: "speaking",
     };
   }
@@ -89,7 +115,7 @@ async function processCommand(
   if (cmd === "ls") return { reply: "Documents  Lab  Suits  Workshop", orb: "speaking" };
   if (cmd.startsWith("echo ")) return { reply: cmd.slice(5), orb: "speaking" };
 
-  // Geri kalan her şey için AI Gateway'e sor
+  // Geri kalan her şey için AI Gateway
   try {
     const convo = history
       .filter((m) => m.role === "user" || m.role === "jarvis")
@@ -106,6 +132,15 @@ async function processCommand(
   }
 }
 
+async function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result as string);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(file);
+  });
+}
+
 export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
   const [messages, setMessages] = useState<Msg[]>([
     { id: "1", role: "system", text: "J.A.R.V.I.S sistemi başlatıldı. Komutlarınız bekleniyor.", ts: Date.now() },
@@ -114,25 +149,44 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
   const [listening, setListening] = useState(false);
   const [partial, setPartial] = useState("");
   const [voiceSupported, setVoiceSupported] = useState(false);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
   const listenerRef = useRef<Listener | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const askAI = useServerFn(askJarvis);
 
   useEffect(() => {
     setVoiceSupported(isSpeechRecognitionSupported());
   }, []);
 
+  // Otomatik aşağı kaydır - sadece kullanıcı zaten en alttaysa
   useEffect(() => {
+    if (!autoScroll) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, partial]);
+  }, [messages, partial, autoScroll]);
 
-  const submit = async (text: string) => {
-    if (!text.trim() || shutdown) return;
-    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text, ts: Date.now() };
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    setAutoScroll(nearBottom);
+  };
+
+  const submit = async (text: string, imageUrl?: string | null) => {
+    if ((!text.trim() && !imageUrl) || shutdown) return;
+    const userMsg: Msg = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: text || (imageUrl ? "[görsel]" : ""),
+      ts: Date.now(),
+      imageUrl: imageUrl ?? undefined,
+    };
     setMessages((m) => [...m, userMsg]);
+    setAutoScroll(true);
 
     onStateChange("thinking");
-    const { reply, kind, orb } = await processCommand(text, messages, askAI);
+    const { reply, kind, orb } = await processCommand(text, messages, askAI, imageUrl ?? undefined);
     const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
     setMessages((m) => [...m, reMsg]);
 
@@ -146,37 +200,58 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
       setTimeout(() => {
         speak(reply, {
           onStart: () => onStateChange("speaking"),
-          onEnd: () => onStateChange("idle"),
+          onEnd: () => onStateChange(listening ? "thinking" : "idle"),
         });
       }, 600);
     } else {
       speak(reply, {
         onStart: () => onStateChange(orb),
-        onEnd: () => onStateChange("idle"),
+        onEnd: () => onStateChange(listening ? "thinking" : "idle"),
       });
     }
   };
 
   const send = () => {
     const text = input;
+    const img = pendingImage;
     setInput("");
-    void submit(text);
+    setPendingImage(null);
+    void submit(text, img);
+  };
+
+  const handleFile = async (file: File | null | undefined) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return;
+    if (file.size > 8 * 1024 * 1024) {
+      setMessages((m) => [
+        ...m,
+        { id: crypto.randomUUID(), role: "system", text: "Görsel 8MB'tan büyük olamaz.", ts: Date.now() },
+      ]);
+      return;
+    }
+    const url = await fileToDataUrl(file);
+    setPendingImage(url);
   };
 
   const toggleMic = () => {
     if (shutdown) return;
     if (listening) {
       listenerRef.current?.stop();
+      listenerRef.current = null;
+      setListening(false);
+      onStateChange("idle");
       return;
     }
     stopSpeaking();
     setPartial("");
     onStateChange("thinking");
     const l = startListening({
+      continuous: true,
       onPartial: (t) => setPartial(t),
       onResult: (t) => {
         setPartial("");
-        void submit(t);
+        // Mikrofon açık kalır; sadece bu cümleyi işle
+        void submit(t, null);
       },
       onError: (err) => {
         setPartial("");
@@ -205,6 +280,8 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     if (muted || shutdown) {
       stopSpeaking();
       listenerRef.current?.stop();
+      listenerRef.current = null;
+      setListening(false);
     }
   }, [muted, shutdown]);
 
@@ -213,12 +290,17 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="display text-jarvis-blue text-glow text-sm tracking-widest">COMM // CHAT</div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-jarvis-blue animate-pulse" />
-          <span className="text-xs text-muted-foreground">CONNECTED</span>
+          <span className={`w-2 h-2 rounded-full ${listening ? "bg-jarvis-red" : "bg-jarvis-blue"} animate-pulse`} />
+          <span className="text-xs text-muted-foreground">{listening ? "LISTENING" : "CONNECTED"}</span>
         </div>
       </div>
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3 scrollbar-thin">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-3 scrollbar-thin"
+        style={{ touchAction: "pan-y" }}
+      >
         {messages.map((m) => (
           <div key={m.id} className={`text-sm leading-relaxed ${m.role === "user" ? "text-right" : "text-left"}`}>
             <div
@@ -235,6 +317,13 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
               {m.role === "jarvis" && (
                 <div className="text-[10px] tracking-widest text-jarvis-blue mb-1 display">JARVIS</div>
               )}
+              {m.imageUrl && (
+                <img
+                  src={m.imageUrl}
+                  alt="görsel"
+                  className="mb-2 max-h-48 rounded border border-jarvis-blue/40"
+                />
+              )}
               {m.text}
             </div>
           </div>
@@ -246,14 +335,37 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
             </div>
           </div>
         )}
+        {!autoScroll && (
+          <button
+            onClick={() => {
+              setAutoScroll(true);
+              scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+            }}
+            className="sticky bottom-0 mx-auto block text-[10px] display tracking-widest text-jarvis-blue bg-background/70 px-2 py-1 rounded border border-jarvis-blue/40"
+          >
+            ↓ EN ALTA
+          </button>
+        )}
       </div>
 
-      <div className="border-t border-border p-3">
+      <div className="border-t border-border p-3 space-y-2">
+        {pendingImage && (
+          <div className="flex items-center gap-2 p-2 rounded border border-jarvis-blue/40 bg-accent/20">
+            <img src={pendingImage} alt="ek" className="h-12 w-12 object-cover rounded" />
+            <span className="text-xs text-muted-foreground flex-1">Görsel hazır — bir şey sorabilir veya direkt yollayabilirsiniz.</span>
+            <button
+              onClick={() => setPendingImage(null)}
+              className="text-xs text-jarvis-red display tracking-widest"
+            >
+              ✕ KALDIR
+            </button>
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <button
             onClick={toggleMic}
             disabled={shutdown || !voiceSupported}
-            title={voiceSupported ? "Sesli komut" : "Tarayıcınız desteklemiyor"}
+            title={voiceSupported ? "Sürekli sesli sohbet" : "Tarayıcınız desteklemiyor"}
             className="display text-xs px-2 py-1 rounded border transition disabled:opacity-30"
             style={{
               color: listening ? "var(--jarvis-red)" : "var(--jarvis-blue)",
@@ -264,13 +376,39 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
           >
             {listening ? "● REC" : "🎙 MIC"}
           </button>
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={shutdown}
+            title="Görsel ekle"
+            className="display text-xs px-2 py-1 rounded border border-jarvis-blue text-jarvis-blue disabled:opacity-30"
+          >
+            🖼 IMG
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              void handleFile(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
           <span className="text-jarvis-blue display text-sm">{">"}</span>
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && send()}
             disabled={shutdown}
-            placeholder={shutdown ? "Sistem kapalı..." : listening ? "Dinleniyor..." : "Komutu girin veya mikrofona basın..."}
+            placeholder={
+              shutdown
+                ? "Sistem kapalı..."
+                : listening
+                ? "Dinleniyor — istediğiniz kadar konuşun..."
+                : pendingImage
+                ? "Görsel hakkında bir şey sorun veya boş bırakıp gönderin..."
+                : "Komut girin, soru sorun veya görsel ekleyin..."
+            }
             className="flex-1 bg-transparent outline-none text-sm placeholder:text-muted-foreground/60 disabled:opacity-40"
           />
           <button
