@@ -131,7 +131,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     setMessages((m) => [...m, userMsg]);
 
     onStateChange("thinking");
-    const { reply, kind, orb } = await processCommand(text);
+    const { reply, kind, orb } = await processCommand(text, messages, askAI);
     const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
     setMessages((m) => [...m, reMsg]);
 
