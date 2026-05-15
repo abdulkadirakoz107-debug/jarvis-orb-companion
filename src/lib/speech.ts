@@ -1,6 +1,5 @@
-// Web Speech API tabanlı sesli komut tanıma (Türkçe)
-
-type SR = typeof window extends { SpeechRecognition: infer T } ? T : any;
+// Web Speech API tabanlı sesli komut tanıma (Türkçe).
+// Sürekli mod: kullanıcı durdurana kadar dinler, her tamamlanan cümleyi onResult ile bildirir.
 
 function getRecognition(): any | null {
   if (typeof window === "undefined") return null;
@@ -21,6 +20,7 @@ export type Listener = {
 
 export function startListening(opts: {
   lang?: string;
+  continuous?: boolean;
   onResult: (text: string) => void;
   onPartial?: (text: string) => void;
   onError?: (err: string) => void;
@@ -31,10 +31,13 @@ export function startListening(opts: {
     opts.onError?.("Tarayıcınız sesli komutu desteklemiyor.");
     return null;
   }
+  const continuous = opts.continuous ?? true;
   rec.lang = opts.lang ?? "tr-TR";
   rec.interimResults = true;
-  rec.continuous = false;
+  rec.continuous = continuous;
   rec.maxAlternatives = 1;
+
+  let stopped = false;
 
   rec.onresult = (e: any) => {
     let finalText = "";
@@ -47,8 +50,24 @@ export function startListening(opts: {
     if (partial) opts.onPartial?.(partial);
     if (finalText) opts.onResult(finalText.trim());
   };
-  rec.onerror = (e: any) => opts.onError?.(e.error ?? "Bilinmeyen hata");
-  rec.onend = () => opts.onEnd?.();
+  rec.onerror = (e: any) => {
+    const err = e.error ?? "Bilinmeyen hata";
+    // 'no-speech' / 'aborted' gibi yumuşak hatalarda sessizce devam et
+    if (err === "no-speech" || err === "aborted") return;
+    opts.onError?.(err);
+  };
+  rec.onend = () => {
+    if (continuous && !stopped) {
+      // Tarayıcılar continuous modda bile zaman zaman bitirir; otomatik yeniden başlat.
+      try {
+        rec.start();
+        return;
+      } catch {
+        /* fallthrough */
+      }
+    }
+    opts.onEnd?.();
+  };
 
   try {
     rec.start();
@@ -57,5 +76,14 @@ export function startListening(opts: {
     return null;
   }
 
-  return { stop: () => rec.stop() };
+  return {
+    stop: () => {
+      stopped = true;
+      try {
+        rec.stop();
+      } catch {
+        /* noop */
+      }
+    },
+  };
 }
