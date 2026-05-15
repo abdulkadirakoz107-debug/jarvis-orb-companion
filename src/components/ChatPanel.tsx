@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import type { OrbState } from "./Orb";
 import { speak, stopSpeaking } from "@/lib/voice";
 import { isSpeechRecognitionSupported, startListening, type Listener } from "@/lib/speech";
 import { getWeather } from "@/lib/weather";
+import { askJarvis } from "@/lib/ai.functions";
 
 export type Msg = {
   id: string;
