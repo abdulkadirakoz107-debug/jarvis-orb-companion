@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
 import type { OrbState } from "./Orb";
 import { speak, stopSpeaking } from "@/lib/voice";
 import { isSpeechRecognitionSupported, startListening, type Listener } from "@/lib/speech";
 import { getWeather } from "@/lib/weather";
+import { askJarvis } from "@/lib/ai.functions";
 
 export type Msg = {
   id: string;
@@ -20,8 +22,15 @@ type Props = {
 
 type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState };
 
-async function processCommand(input: string): Promise<CmdResult> {
-  const cmd = input.trim().toLowerCase();
+type AskAI = (input: { data: { messages: { role: "user" | "assistant" | "system"; content: string }[] } }) => Promise<{ reply: string }>;
+
+async function processCommand(
+  input: string,
+  history: Msg[],
+  askAI: AskAI,
+): Promise<CmdResult> {
+  const raw = input.trim();
+  const cmd = raw.toLowerCase();
   if (!cmd) return { reply: "Lütfen bir komut girin efendim.", kind: "error", orb: "error" };
 
   const openMatch = cmd.match(/^(?:aç|open|başlat)\s+(.+)/);
@@ -29,7 +38,7 @@ async function processCommand(input: string): Promise<CmdResult> {
     return { reply: `🚀 ${openMatch[1]} uygulaması başlatılıyor... (simülasyon)`, kind: "action", orb: "speaking" };
   }
 
-  if (/(müzik|music|şarkı|çal)/.test(cmd)) {
+  if (/^(müzik|music|şarkı|çal)\b/.test(cmd) || /(müzik çal|şarkı çal)/.test(cmd)) {
     const tracks = ["Daft Punk - Aerodynamic", "Hans Zimmer - Time", "TOOL - Pneuma", "Interstellar OST"];
     const t = tracks[Math.floor(Math.random() * tracks.length)];
     return { reply: `🎵 Şu an çalınıyor: "${t}"`, kind: "action", orb: "speaking" };
@@ -39,12 +48,9 @@ async function processCommand(input: string): Promise<CmdResult> {
   if (msgMatch) {
     return { reply: `✉️ ${msgMatch[1]} kişisine mesaj gönderildi: "${msgMatch[2]}"`, kind: "action", orb: "speaking" };
   }
-  if (/mesaj/.test(cmd)) {
-    return { reply: "Kime ve ne yazılacak? Örn: mesaj gönder Ayşe Merhaba", kind: "action", orb: "speaking" };
-  }
 
   // Gerçek hava durumu (Open-Meteo)
-  if (/(hava|weather)/.test(cmd)) {
+  if (/(hava durumu|weather|hava nasıl)/.test(cmd) || /^hava\b/.test(cmd)) {
     const m = cmd.match(/(?:hava(?:sı)?|weather)\s+([a-zçğıöşü\s]+)/i);
     let city = m?.[1]?.trim();
     if (!city) {
@@ -59,7 +65,7 @@ async function processCommand(input: string): Promise<CmdResult> {
     }
   }
 
-  if (/(sistem|system|cpu|ram|bellek)/.test(cmd)) {
+  if (/^(sistem bilgisi|system info|cpu|ram|bellek)\b/.test(cmd)) {
     const cpu = (Math.random() * 60 + 10).toFixed(0);
     const ram = (Math.random() * 50 + 30).toFixed(0);
     const mem = (navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? "?";
@@ -73,7 +79,7 @@ async function processCommand(input: string): Promise<CmdResult> {
   if (cmd === "help" || cmd === "yardım") {
     return {
       reply:
-        "Komutlar:\n• aç <uygulama>\n• müzik çal\n• mesaj gönder <isim> <metin>\n• hava <şehir>\n• sistem bilgisi\n• terminal: echo, date, whoami, pwd, ls\n• mute / resume / shutdown",
+        "Bana her şeyi sorabilirsiniz efendim. Özel komutlar:\n• aç <uygulama>\n• müzik çal\n• mesaj gönder <isim> <metin>\n• hava <şehir>\n• sistem bilgisi\n• terminal: echo, date, whoami, pwd, ls\n• mute / resume / shutdown",
       orb: "speaking",
     };
   }
@@ -83,15 +89,21 @@ async function processCommand(input: string): Promise<CmdResult> {
   if (cmd === "ls") return { reply: "Documents  Lab  Suits  Workshop", orb: "speaking" };
   if (cmd.startsWith("echo ")) return { reply: cmd.slice(5), orb: "speaking" };
 
-  if (/(merhaba|selam|hello|hi|hey|jarvis)/.test(cmd)) {
-    return { reply: "Merhaba efendim. Size nasıl yardımcı olabilirim?", orb: "speaking" };
+  // Geri kalan her şey için AI Gateway'e sor
+  try {
+    const convo = history
+      .filter((m) => m.role === "user" || m.role === "jarvis")
+      .slice(-8)
+      .map((m) => ({
+        role: (m.role === "jarvis" ? "assistant" : "user") as "assistant" | "user",
+        content: m.text,
+      }));
+    convo.push({ role: "user", content: raw });
+    const { reply } = await askAI({ data: { messages: convo } });
+    return { reply, orb: "speaking" };
+  } catch (e) {
+    return { reply: (e as Error).message || "Bir hata oluştu efendim.", kind: "error", orb: "error" };
   }
-
-  return {
-    reply: `"${input}" komutu tanınmadı. 'help' yazarak komut listesine ulaşabilirsiniz.`,
-    kind: "error",
-    orb: "error",
-  };
 }
 
 export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
@@ -104,6 +116,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const listenerRef = useRef<Listener | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const askAI = useServerFn(askJarvis);
 
   useEffect(() => {
     setVoiceSupported(isSpeechRecognitionSupported());
@@ -119,7 +132,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     setMessages((m) => [...m, userMsg]);
 
     onStateChange("thinking");
-    const { reply, kind, orb } = await processCommand(text);
+    const { reply, kind, orb } = await processCommand(text, messages, askAI);
     const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
     setMessages((m) => [...m, reMsg]);
 
