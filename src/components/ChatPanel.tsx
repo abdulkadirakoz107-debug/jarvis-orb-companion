@@ -175,6 +175,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const askAI = useServerFn(askJarvis);
+  const genImg = useServerFn(generateImage);
 
   useEffect(() => {
     setVoiceSupported(isSpeechRecognitionSupported());
@@ -206,8 +207,8 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     setAutoScroll(true);
 
     onStateChange("thinking");
-    const { reply, kind, orb } = await processCommand(text, messages, askAI, imageUrl ?? undefined);
-    const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
+    const { reply, kind, orb, generatedImage } = await processCommand(text, messages, askAI, genImg, imageUrl ?? undefined);
+    const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind, imageUrl: generatedImage };
     setMessages((m) => [...m, reMsg]);
 
     if (muted) {
