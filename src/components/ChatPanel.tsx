@@ -5,6 +5,7 @@ import { speak, stopSpeaking } from "@/lib/voice";
 import { isSpeechRecognitionSupported, startListening, type Listener } from "@/lib/speech";
 import { getWeather } from "@/lib/weather";
 import { askJarvis } from "@/lib/ai.functions";
+import { generateImage } from "@/lib/image-gen.functions";
 
 export type Msg = {
   id: string;
@@ -21,20 +22,35 @@ type Props = {
   shutdown: boolean;
 };
 
-type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState };
+type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState; generatedImage?: string };
 
 type AskAI = (input: {
   data: { messages: { role: "user" | "assistant" | "system"; content: string; imageUrl?: string }[] };
 }) => Promise<{ reply: string }>;
 
+type GenImg = (input: { data: { prompt: string } }) => Promise<{ imageUrl: string }>;
+
 async function processCommand(
   input: string,
   history: Msg[],
   askAI: AskAI,
+  genImg: GenImg,
   imageUrl?: string,
 ): Promise<CmdResult> {
   const raw = input.trim();
   const cmd = raw.toLowerCase();
+
+  // Görsel üretimi: "görsel üret <prompt>", "resim çiz ...", "imagine ...", "draw ..."
+  const genMatch = raw.match(/^(?:(?:bir\s+)?(?:görsel|resim|image|picture|fotoğraf)\s+(?:üret|oluştur|yap|çiz|generate|draw|create)|(?:üret|oluştur|çiz|generate|draw|imagine)\s+(?:bir\s+)?(?:görsel|resim|image|picture|fotoğraf))[:\s-]+(.+)/i);
+  if (genMatch) {
+    const prompt = genMatch[1].trim();
+    try {
+      const { imageUrl: out } = await genImg({ data: { prompt } });
+      return { reply: `🎨 İşte istediğiniz görsel efendim: "${prompt}"`, kind: "action", orb: "speaking", generatedImage: out };
+    } catch (e) {
+      return { reply: (e as Error).message || "Görsel üretilemedi.", kind: "error", orb: "error" };
+    }
+  }
 
   // Görsel varsa doğrudan AI'a (görsel analiz)
   if (imageUrl) {
