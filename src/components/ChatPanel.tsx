@@ -76,13 +76,17 @@ async function processCommand(
     return { reply: `✉️ ${msgMatch[1]} kişisine mesaj gönderildi: "${msgMatch[2]}"`, kind: "action", orb: "speaking" };
   }
 
-  if (/(hava durumu|weather|hava nasıl)/.test(cmd) || /^hava\b/.test(cmd)) {
-    const m = cmd.match(/(?:hava(?:sı)?|weather)\s+([a-zçğıöşü\s]+)/i);
-    let city = m?.[1]?.trim();
+  if (/\b(hava|weather|sıcaklık|derece|yağmur|kar)\b/.test(cmd)) {
+    // Şehri çıkar: "istanbul'da hava nasıl", "hava izmir", "ankara sıcaklık" vs.
+    let city =
+      cmd.match(/(?:hava(?:sı|da|nın)?|weather|sıcaklık|derece)\s+([a-zçğıöşüi\s]+?)(?:\s+(?:nasıl|ne|kaç|durumu).*)?$/i)?.[1]?.trim() ||
+      cmd.match(/^([a-zçğıöşüi]+?)['’]?(?:da|de|ta|te)\s+(?:hava|sıcaklık)/i)?.[1]?.trim() ||
+      cmd.match(/^([a-zçğıöşüi]+)\s+(?:hava|sıcaklık|derece)/i)?.[1]?.trim();
     if (!city) {
-      const known = ["istanbul", "ankara", "izmir", "bursa", "antalya", "adana", "konya", "trabzon"];
-      city = known.find((c) => cmd.includes(c)) ?? "istanbul";
+      const known = ["istanbul", "ankara", "izmir", "bursa", "antalya", "adana", "konya", "trabzon", "gaziantep", "mersin", "kayseri", "eskişehir", "samsun", "diyarbakır", "şanlıurfa", "malatya", "erzurum", "van", "rize", "muğla", "denizli"];
+      city = known.find((c) => cmd.includes(c));
     }
+    if (!city) city = "istanbul";
     try {
       const reply = await getWeather(city);
       return { reply, kind: "action", orb: "speaking" };
