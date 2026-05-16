@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Orb, HudFrame, Clock, type OrbState } from "@/components/Orb";
 import { ChatPanel } from "@/components/ChatPanel";
 
