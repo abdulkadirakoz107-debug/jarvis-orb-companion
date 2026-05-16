@@ -5,6 +5,7 @@ import { speak, stopSpeaking } from "@/lib/voice";
 import { isSpeechRecognitionSupported, startListening, type Listener } from "@/lib/speech";
 import { getWeather } from "@/lib/weather";
 import { askJarvis } from "@/lib/ai.functions";
+import { generateImage } from "@/lib/image-gen.functions";
 
 export type Msg = {
   id: string;
@@ -21,20 +22,35 @@ type Props = {
   shutdown: boolean;
 };
 
-type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState };
+type CmdResult = { reply: string; kind?: "error" | "action"; orb: OrbState; generatedImage?: string };
 
 type AskAI = (input: {
   data: { messages: { role: "user" | "assistant" | "system"; content: string; imageUrl?: string }[] };
 }) => Promise<{ reply: string }>;
 
+type GenImg = (input: { data: { prompt: string } }) => Promise<{ imageUrl: string }>;
+
 async function processCommand(
   input: string,
   history: Msg[],
   askAI: AskAI,
+  genImg: GenImg,
   imageUrl?: string,
 ): Promise<CmdResult> {
   const raw = input.trim();
   const cmd = raw.toLowerCase();
+
+  // Görsel üretimi: "görsel üret <prompt>", "resim çiz ...", "imagine ...", "draw ..."
+  const genMatch = raw.match(/^(?:(?:bir\s+)?(?:görsel|resim|image|picture|fotoğraf)\s+(?:üret|oluştur|yap|çiz|generate|draw|create)|(?:üret|oluştur|çiz|generate|draw|imagine)\s+(?:bir\s+)?(?:görsel|resim|image|picture|fotoğraf))[:\s-]+(.+)/i);
+  if (genMatch) {
+    const prompt = genMatch[1].trim();
+    try {
+      const { imageUrl: out } = await genImg({ data: { prompt } });
+      return { reply: `🎨 İşte istediğiniz görsel efendim: "${prompt}"`, kind: "action", orb: "speaking", generatedImage: out };
+    } catch (e) {
+      return { reply: (e as Error).message || "Görsel üretilemedi.", kind: "error", orb: "error" };
+    }
+  }
 
   // Görsel varsa doğrudan AI'a (görsel analiz)
   if (imageUrl) {
@@ -159,6 +175,7 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const askAI = useServerFn(askJarvis);
+  const genImg = useServerFn(generateImage);
 
   useEffect(() => {
     setVoiceSupported(isSpeechRecognitionSupported());
@@ -190,8 +207,8 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
     setAutoScroll(true);
 
     onStateChange("thinking");
-    const { reply, kind, orb } = await processCommand(text, messages, askAI, imageUrl ?? undefined);
-    const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind };
+    const { reply, kind, orb, generatedImage } = await processCommand(text, messages, askAI, genImg, imageUrl ?? undefined);
+    const reMsg: Msg = { id: crypto.randomUUID(), role: "jarvis", text: reply, ts: Date.now(), kind, imageUrl: generatedImage };
     setMessages((m) => [...m, reMsg]);
 
     if (muted) {
