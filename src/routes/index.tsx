@@ -54,8 +54,27 @@ function Index() {
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [muted, setMuted] = useState(false);
   const [shutdown, setShutdown] = useState(false);
+  const [chatWidth, setChatWidth] = useState(420);
+  const dragging = useRef(false);
 
   const effectiveState: OrbState = shutdown ? "error" : muted ? "muted" : orbState;
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!dragging.current) return;
+      const w = Math.min(720, Math.max(320, window.innerWidth - ev.clientX - 32));
+      setChatWidth(w);
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   return (
     <main className="h-screen w-screen relative grid-bg overflow-hidden">
@@ -71,9 +90,12 @@ function Index() {
         </header>
 
         {/* Main grid: orb (center) + chat (right) */}
-        <div className="h-full w-full grid grid-cols-[1fr_420px] gap-6 px-8 pt-20 pb-32">
+        <div
+          className="h-full w-full grid gap-6 px-8 pt-20 pb-32"
+          style={{ gridTemplateColumns: `1fr 6px ${chatWidth}px` }}
+        >
           {/* Center: orb area */}
-          <section className="relative flex items-center justify-center">
+          <section className="relative flex items-center justify-center min-w-0">
             <Orb state={effectiveState} />
 
             {/* Side stat panels */}
@@ -91,14 +113,27 @@ function Index() {
             </div>
           </section>
 
+          {/* Drag handle */}
+          <div
+            onMouseDown={onMouseDown}
+            className="relative cursor-col-resize group flex items-center justify-center"
+            title="Sohbet panelini yeniden boyutlandır"
+          >
+            <div className="w-[2px] h-full bg-jarvis-blue/20 group-hover:bg-jarvis-blue/70 transition-colors" style={{ boxShadow: "0 0 8px var(--jarvis-blue)" }} />
+            <div className="absolute top-1/2 -translate-y-1/2 h-10 w-1 rounded-full bg-jarvis-blue/60 group-hover:bg-jarvis-blue" />
+          </div>
+
           {/* Right: chat */}
-          <aside>
+          <aside className="h-full min-h-0 min-w-0">
             <ChatPanel onStateChange={setOrbState} muted={muted} shutdown={shutdown} />
           </aside>
         </div>
 
         {/* Bottom controls */}
-        <footer className="absolute bottom-0 left-0 right-[420px] mr-8 flex items-center justify-center gap-6 pb-8 pt-4">
+        <footer
+          className="absolute bottom-0 left-0 flex items-center justify-center gap-6 pb-8 pt-4"
+          style={{ right: `${chatWidth + 32}px` }}
+        >
           <ControlButton
             label={muted ? "MUTED" : "MUTE"}
             variant="yellow"
