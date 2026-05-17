@@ -355,11 +355,23 @@ export function ChatPanel({ onStateChange, muted, shutdown }: Props) {
                 <div className="text-[10px] tracking-widest text-jarvis-blue mb-1 display">JARVIS</div>
               )}
               {m.imageUrl && (
-                <img
-                  src={m.imageUrl}
-                  alt="görsel"
-                  className="mb-2 max-h-48 rounded border border-jarvis-blue/40"
-                />
+                <div className="mb-2 space-y-1">
+                  <img
+                    src={m.imageUrl}
+                    alt="görsel"
+                    className="max-h-64 rounded border border-jarvis-blue/40 cursor-pointer hover:opacity-90"
+                    onClick={() => window.open(m.imageUrl, "_blank")}
+                  />
+                  {m.role === "jarvis" && (
+                    <a
+                      href={m.imageUrl}
+                      download={`jarvis-${m.id}.png`}
+                      className="inline-block text-[10px] display tracking-widest text-jarvis-blue hover:text-glow"
+                    >
+                      ⬇ İNDİR
+                    </a>
+                  )}
+                </div>
               )}
               {m.text}
             </div>
