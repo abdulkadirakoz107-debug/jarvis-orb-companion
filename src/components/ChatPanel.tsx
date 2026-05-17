@@ -28,7 +28,9 @@ type AskAI = (input: {
   data: { messages: { role: "user" | "assistant" | "system"; content: string; imageUrl?: string }[] };
 }) => Promise<{ reply: string }>;
 
-type GenImg = (input: { data: { prompt: string } }) => Promise<{ imageUrl: string }>;
+type GenImg = (input: {
+  data: { prompt: string; imageUrl?: string; model?: "fast" | "pro" };
+}) => Promise<{ imageUrl: string; note?: string }>;
 
 async function processCommand(
   input: string,
