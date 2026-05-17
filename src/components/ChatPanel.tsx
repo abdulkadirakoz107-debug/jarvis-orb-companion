@@ -141,7 +141,7 @@ async function processCommand(
   if (cmd === "help" || cmd === "yardım") {
     return {
       reply:
-        "Bana her şeyi sorabilirsiniz efendim. Görsel de yollayabilirsiniz. Özel komutlar:\n• aç <uygulama>\n• müzik çal\n• mesaj gönder <isim> <metin>\n• hava <şehir>\n• sistem bilgisi\n• terminal: echo, date, whoami, pwd, ls",
+        "Bana her şeyi sorabilirsiniz efendim. Özel komutlar:\n• görsel üret: <konu>  (HD için 'pro' ekleyin)\n• görsel ekle + 'düzenle: <talimat>' → görsel düzenleme\n• aç <uygulama>\n• müzik çal\n• mesaj gönder <isim> <metin>\n• hava <şehir>\n• sistem bilgisi\n• terminal: echo, date, whoami, pwd, ls",
       orb: "speaking",
     };
   }
