@@ -1,14 +1,38 @@
 import { createServerFn } from "@tanstack/react-start";
 
+type GenInput = {
+  prompt: string;
+  imageUrl?: string; // varsa düzenleme modu
+  model?: "fast" | "pro"; // fast = nano banana, pro = yüksek kalite
+};
+
 export const generateImage = createServerFn({ method: "POST" })
-  .inputValidator((input: { prompt: string }) => {
+  .inputValidator((input: GenInput) => {
     if (!input?.prompt || typeof input.prompt !== "string") throw new Error("prompt required");
     if (input.prompt.length > 2000) throw new Error("prompt too long");
+    if (input.imageUrl && !input.imageUrl.startsWith("data:image/")) throw new Error("invalid image");
     return input;
   })
   .handler(async ({ data }) => {
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("LOVABLE_API_KEY tanımlı değil.");
+
+    const model =
+      data.model === "pro"
+        ? "google/gemini-3-pro-image-preview"
+        : "google/gemini-2.5-flash-image-preview";
+
+    const userContent: any[] = [
+      {
+        type: "text",
+        text: data.imageUrl
+          ? `Bu görseli aşağıdaki talimata göre düzenle. Sadece istenen değişikliği uygula, kompozisyonu ve stili koru. Talimat: ${data.prompt}`
+          : `Yüksek kaliteli, detaylı, sinematik bir görsel üret. Konu: ${data.prompt}. Net kompozisyon, gerçekçi ışık, zengin renk.`,
+      },
+    ];
+    if (data.imageUrl) {
+      userContent.push({ type: "image_url", image_url: { url: data.imageUrl } });
+    }
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -17,8 +41,8 @@ export const generateImage = createServerFn({ method: "POST" })
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages: [{ role: "user", content: data.prompt }],
+        model,
+        messages: [{ role: "user", content: userContent }],
         modalities: ["image", "text"],
       }),
     });
@@ -30,9 +54,10 @@ export const generateImage = createServerFn({ method: "POST" })
       throw new Error(`Görsel üretim hatası: ${res.status} ${t.slice(0, 160)}`);
     }
     const json = await res.json();
+    const msg = json?.choices?.[0]?.message;
     const imageUrl: string | undefined =
-      json?.choices?.[0]?.message?.images?.[0]?.image_url?.url ??
-      json?.choices?.[0]?.message?.images?.[0]?.url;
+      msg?.images?.[0]?.image_url?.url ?? msg?.images?.[0]?.url;
     if (!imageUrl) throw new Error("Görsel alınamadı efendim.");
-    return { imageUrl };
+    const note: string = typeof msg?.content === "string" ? msg.content : "";
+    return { imageUrl, note };
   });
