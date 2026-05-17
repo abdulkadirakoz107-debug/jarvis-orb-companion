@@ -44,8 +44,8 @@ export const askJarvis = createServerFn({ method: "POST" })
       }
     }
 
-    // Görsel varsa multimodal model, yoksa hızlı metin modeli
-    const model = hasImage ? "google/gemini-2.5-flash" : "google/gemini-2.5-flash";
+    // Görsel varsa hızlı multimodal, yoksa öneri kalitesi için pro model
+    const model = hasImage ? "google/gemini-2.5-flash" : "google/gemini-2.5-pro";
 
     const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
