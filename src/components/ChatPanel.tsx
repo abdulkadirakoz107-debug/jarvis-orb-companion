@@ -42,13 +42,27 @@ async function processCommand(
   const raw = input.trim();
   const cmd = raw.toLowerCase();
 
+  // Görsel düzenleme: ek görsel varsa ve kullanıcı düzenleme/değiştirme komutu verdiyse
+  const editMatch = raw.match(/^(?:(?:bu(?:nu)?\s+)?(?:görseli|resmi|fotoğrafı|image|photo)\s+)?(?:düzenle|edit|değiştir|modify|dönüştür|transform|yap|ekle|kaldır|sil|remove|add|replace|change)[:\s-]*(.*)/i);
+  const wantsPro = /\b(pro|hd|yüksek\s*kalite|kaliteli|premium|detaylı)\b/i.test(raw);
+
+  if (imageUrl && (editMatch || /^(düzenle|edit|değiştir)/i.test(raw))) {
+    const prompt = (editMatch?.[1] || raw).trim() || "görseli iyileştir";
+    try {
+      const { imageUrl: out } = await genImg({ data: { prompt, imageUrl, model: wantsPro ? "pro" : "fast" } });
+      return { reply: `✏️ Görsel düzenlendi efendim: "${prompt}"`, kind: "action", orb: "speaking", generatedImage: out };
+    } catch (e) {
+      return { reply: (e as Error).message || "Görsel düzenlenemedi.", kind: "error", orb: "error" };
+    }
+  }
+
   // Görsel üretimi: "görsel üret <prompt>", "resim çiz ...", "imagine ...", "draw ..."
   const genMatch = raw.match(/^(?:(?:bir\s+)?(?:görsel|resim|image|picture|fotoğraf)\s+(?:üret|oluştur|yap|çiz|generate|draw|create)|(?:üret|oluştur|çiz|generate|draw|imagine)\s+(?:bir\s+)?(?:görsel|resim|image|picture|fotoğraf))[:\s-]+(.+)/i);
   if (genMatch) {
     const prompt = genMatch[1].trim();
     try {
-      const { imageUrl: out } = await genImg({ data: { prompt } });
-      return { reply: `🎨 İşte istediğiniz görsel efendim: "${prompt}"`, kind: "action", orb: "speaking", generatedImage: out };
+      const { imageUrl: out } = await genImg({ data: { prompt, model: wantsPro ? "pro" : "fast" } });
+      return { reply: `🎨 İşte istediğiniz görsel efendim${wantsPro ? " (HD)" : ""}: "${prompt}"`, kind: "action", orb: "speaking", generatedImage: out };
     } catch (e) {
       return { reply: (e as Error).message || "Görsel üretilemedi.", kind: "error", orb: "error" };
     }
