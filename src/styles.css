@@ -62,6 +62,10 @@
   --jarvis-yellow: oklch(0.85 0.18 90);
   --jarvis-red: oklch(0.65 0.25 25);
   --jarvis-idle: oklch(0.55 0.10 230);
+  --jarvis-green: oklch(0.80 0.22 150);
+}
+@theme inline {
+  --color-jarvis-green: var(--jarvis-green);
 }
 
 @layer base {
