@@ -62,6 +62,10 @@
   --jarvis-yellow: oklch(0.85 0.18 90);
   --jarvis-red: oklch(0.65 0.25 25);
   --jarvis-idle: oklch(0.55 0.10 230);
+  --jarvis-green: oklch(0.80 0.22 150);
+}
+@theme inline {
+  --color-jarvis-green: var(--jarvis-green);
 }
 
 @layer base {
@@ -112,4 +116,15 @@
 @keyframes wave {
   0%, 100% { transform: scaleY(0.3); }
   50% { transform: scaleY(1); }
+}
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes blink-dot {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+}
+@keyframes bar-fill {
+  from { width: 0%; }
 }
