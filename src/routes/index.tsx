@@ -1,16 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { type OrbState } from "@/components/Orb";
-import { Radar } from "@/components/Radar";
+import { Orb, HudFrame, Clock, type OrbState } from "@/components/Orb";
 import { ChatPanel } from "@/components/ChatPanel";
-import {
-  HealthPanel,
-  SettingsHeaderPanel,
-  StatusPanel,
-  TimePanel,
-  UserFooter,
-  WeatherPanel,
-} from "@/components/SidePanels";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -21,40 +12,6 @@ export const Route = createFileRoute("/")({
     ],
   }),
 });
-
-function ControlButton({
-  label,
-  icon,
-  variant,
-  active,
-  onClick,
-}: {
-  label: string;
-  icon: string;
-  variant: "green" | "blue" | "red";
-  active?: boolean;
-  onClick: () => void;
-}) {
-  const c =
-    variant === "green" ? "var(--jarvis-green)" : variant === "blue" ? "var(--jarvis-blue)" : "var(--jarvis-red)";
-  return (
-    <button
-      onClick={onClick}
-      className="relative display tracking-[0.3em] text-xs px-6 py-2.5 rounded-sm transition-all flex items-center gap-2"
-      style={{
-        color: c,
-        border: `1px solid ${c}`,
-        background: active ? `color-mix(in oklab, ${c} 20%, transparent)` : "transparent",
-        boxShadow: active ? `0 0 18px ${c}` : "none",
-      }}
-    >
-      <span>{icon}</span>
-      <span className="text-glow">{label}</span>
-      <span className="absolute -top-1 -left-1 w-2 h-2 border-t border-l" style={{ borderColor: c }} />
-      <span className="absolute -bottom-1 -right-1 w-2 h-2 border-b border-r" style={{ borderColor: c }} />
-    </button>
-  );
-}
 
 function Index() {
   const [orbState, setOrbState] = useState<OrbState>("idle");
@@ -84,81 +41,57 @@ function Index() {
 
   return (
     <main className="h-screen w-screen overflow-hidden grid-bg relative">
-      {/* SOL KOLON: panel yığını */}
-      <aside className="absolute top-3 left-3 bottom-12 w-[240px] flex flex-col gap-2 overflow-y-auto scrollbar-thin pr-1">
-        <SettingsHeaderPanel />
-        <TimePanel />
-        <WeatherPanel />
-        <StatusPanel />
-        <HealthPanel />
-      </aside>
-
-      {/* MERKEZ: radar + kontroller */}
-      <section
-        className="absolute top-0 bottom-0"
-        style={{ left: 260, right: chatWidth + 28 }}
-      >
-        <div className="relative w-full h-full">
-          <Radar state={effectiveState} />
-
-          {/* LIVE / PAUSE / SHUTDOWN */}
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-4">
-            <ControlButton
-              label="LIVE"
-              icon="🎙"
-              variant="green"
-              active={!shutdown && !muted}
-              onClick={() => { setShutdown(false); setMuted(false); setOrbState("idle"); }}
-            />
-            <ControlButton
-              label="PAUSE"
-              icon="❚❚"
-              variant="blue"
-              active={muted}
-              onClick={() => setMuted((v) => !v)}
-            />
-            <ControlButton
-              label="SHUTDOWN"
-              icon="⏻"
-              variant="red"
-              active={shutdown}
-              onClick={() => setShutdown((v) => !v)}
-            />
+      <HudFrame>
+        {/* Üst bar */}
+        <header className="absolute top-3 left-6 right-6 flex items-center justify-between text-xs tracking-widest text-muted-foreground">
+          <div className="flex items-center gap-3">
+            <span className="display text-jarvis-blue text-glow">J.A.R.V.I.S</span>
+            <span>// SYSTEM ONLINE</span>
           </div>
-        </div>
-      </section>
+          <Clock />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMuted((v) => !v)}
+              className="px-3 py-1 border border-jarvis-blue/40 hover:bg-jarvis-blue/10 rounded-sm"
+            >
+              {muted ? "UNMUTE" : "MUTE"}
+            </button>
+            <button
+              onClick={() => setShutdown((v) => !v)}
+              className="px-3 py-1 border border-jarvis-red/40 text-jarvis-red hover:bg-jarvis-red/10 rounded-sm"
+            >
+              {shutdown ? "BOOT" : "SHUTDOWN"}
+            </button>
+          </div>
+        </header>
 
-      {/* SAĞ KOLON: chat */}
-      <div
-        onMouseDown={onMouseDown}
-        className="absolute top-3 bottom-12 w-[6px] cursor-col-resize group flex items-center justify-center"
-        style={{ right: chatWidth + 18 }}
-        title="Sohbet panelini yeniden boyutlandır"
-      >
+        {/* Merkez orb */}
+        <section
+          className="absolute top-0 bottom-0 left-0 flex items-center justify-center"
+          style={{ right: chatWidth + 28 }}
+        >
+          <Orb state={effectiveState} />
+        </section>
+
+        {/* Sağ kolon: chat */}
         <div
-          className="w-[2px] h-full bg-jarvis-green/20 group-hover:bg-jarvis-green/70 transition-colors"
-          style={{ boxShadow: "0 0 8px var(--jarvis-green)" }}
-        />
-      </div>
-      <aside
-        className="absolute top-3 bottom-12"
-        style={{ right: 12, width: chatWidth }}
-      >
-        <ChatPanel onStateChange={setOrbState} muted={muted} shutdown={shutdown} />
-      </aside>
-
-      {/* ALT BAR */}
-      <footer className="absolute bottom-0 left-0 right-0 h-10 flex items-center justify-between px-4 text-[10px] tracking-[0.3em] text-muted-foreground border-t border-jarvis-green/15">
-        <UserFooter />
-        <div className="text-center">
-          JARVIS · Windows Edition · Realtime Voice Core
+          onMouseDown={onMouseDown}
+          className="absolute top-3 bottom-3 w-[6px] cursor-col-resize group flex items-center justify-center"
+          style={{ right: chatWidth + 18 }}
+          title="Sohbet panelini yeniden boyutlandır"
+        >
+          <div
+            className="w-[2px] h-full bg-jarvis-blue/20 group-hover:bg-jarvis-blue/70 transition-colors"
+            style={{ boxShadow: "0 0 8px var(--jarvis-blue)" }}
+          />
         </div>
-        <div className="flex gap-3">
-          <span><span className="text-jarvis-green">[F4]</span> MUTE</span>
-          <span><span className="text-jarvis-blue">[F5]</span> PAUSE</span>
-          <span><span className="text-jarvis-red">[ESC]</span> EXIT</span>
-        </div>
-      </footer>
+        <aside
+          className="absolute top-3 bottom-3"
+          style={{ right: 12, width: chatWidth }}
+        >
+          <ChatPanel onStateChange={setOrbState} muted={muted} shutdown={shutdown} />
+        </aside>
+      </HudFrame>
     </main>
   );
 }
