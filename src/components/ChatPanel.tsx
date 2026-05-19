@@ -92,9 +92,50 @@ async function processCommand(
 
   if (!cmd) return { reply: "Lütfen bir komut girin efendim.", kind: "error", orb: "error" };
 
-  const openMatch = cmd.match(/^(?:aç|open|başlat)\s+(.+)/);
+  const openMatch = cmd.match(/^(?:aç|open|başlat|git)\s+(.+)/);
   if (openMatch) {
-    return { reply: `🚀 ${openMatch[1]} uygulaması başlatılıyor... (simülasyon)`, kind: "action", orb: "speaking" };
+    const target = openMatch[1].trim().replace(/['"`.,!?]+$/, "");
+    // Bilinen siteler / uygulamalar
+    const sites: Record<string, string> = {
+      youtube: "https://youtube.com", "you tube": "https://youtube.com",
+      google: "https://google.com", gmail: "https://mail.google.com",
+      whatsapp: "https://web.whatsapp.com", "whatsapp web": "https://web.whatsapp.com",
+      twitter: "https://twitter.com", x: "https://x.com",
+      instagram: "https://instagram.com", facebook: "https://facebook.com",
+      tiktok: "https://tiktok.com", reddit: "https://reddit.com",
+      github: "https://github.com", "chat gpt": "https://chat.openai.com",
+      chatgpt: "https://chat.openai.com", gemini: "https://gemini.google.com",
+      grok: "https://grok.com", claude: "https://claude.ai",
+      netflix: "https://netflix.com", spotify: "https://open.spotify.com",
+      "youtube music": "https://music.youtube.com", twitch: "https://twitch.tv",
+      linkedin: "https://linkedin.com", maps: "https://maps.google.com",
+      "google maps": "https://maps.google.com", harita: "https://maps.google.com",
+      translate: "https://translate.google.com", çeviri: "https://translate.google.com",
+      drive: "https://drive.google.com", "google drive": "https://drive.google.com",
+      lovable: "https://lovable.dev", amazon: "https://amazon.com",
+      trendyol: "https://trendyol.com", hepsiburada: "https://hepsiburada.com",
+      ekşi: "https://eksisozluk.com", "ekşi sözlük": "https://eksisozluk.com",
+    };
+    // Uygulama URL şemaları (varsa tarayıcı dener)
+    const apps: Record<string, string> = {
+      "vs code": "vscode://", vscode: "vscode://",
+      "spotify uygulaması": "spotify://", zoom: "zoommtg://",
+      slack: "slack://", discord: "discord://",
+    };
+    const key = target.toLowerCase();
+    let url = sites[key] || apps[key];
+    if (!url) {
+      // URL benzeri mi? (ör. "example.com", "https://...")
+      if (/^https?:\/\//i.test(target)) url = target;
+      else if (/^[\w-]+\.[a-z]{2,}/i.test(target)) url = "https://" + target;
+      else url = `https://www.google.com/search?q=${encodeURIComponent(target)}`;
+    }
+    try {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return { reply: `🚀 Açılıyor efendim: ${target} → ${url}`, kind: "action", orb: "speaking" };
+    } catch {
+      return { reply: `Açılamadı: ${url}`, kind: "error", orb: "error" };
+    }
   }
 
   if (/^(müzik|music|şarkı|çal)\b/.test(cmd) || /(müzik çal|şarkı çal)/.test(cmd)) {
